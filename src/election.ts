@@ -42,11 +42,14 @@ export class Election {
               public readonly name: string) {
     this.namespace = namespace.namespace(this.getPrefix())
     this.lease = this.namespace.lease(Election.ttl)
-    this.lease.grant().then(leaseId => this._leaseId = leaseId)
   }
 
   public async ready() {
-    await this.lease.grant()
+    const leaseId = await this.lease.grant()
+
+    if (!this.isReady) {
+      this._leaseId = leaseId
+    }
   }
 
   public async campaign(value: any) {
