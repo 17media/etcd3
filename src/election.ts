@@ -17,11 +17,11 @@ export class Election {
   private _leaderRevision = ''
   private _isLeader = false
 
-  get leaseId(): string { return this._leaseId }
-  get leaderKey(): string { return this._leaderKey }
-  get leaderRevision(): string { return this._leaderRevision }
-  get isReady(): boolean { return this._leaseId.length > 0 }
-  get isLeader(): boolean { return this._isLeader }
+  public get leaseId(): string { return this._leaseId }
+  public get leaderKey(): string { return this._leaderKey }
+  public get leaderRevision(): string { return this._leaderRevision }
+  public get isReady(): boolean { return this._leaseId.length > 0 }
+  public get isLeader(): boolean { return this._isLeader }
 
   constructor(namespace: Namespace,
               public readonly name: string) {
@@ -36,10 +36,11 @@ export class Election {
 
   public async campaign(value: any) {
     this.throwIfNotReady()
-    const result = await this.namespace.if(this.leaseId, 'Create', '==', 0)
-                                       .then(this.namespace.put(this.leaseId).value(value).lease(this.leaseId))
-                                       .else(this.namespace.get(this.leaseId))
-                                       .commit()
+    const result = await this.namespace
+      .if(this.leaseId, 'Create', '==', 0)
+      .then(this.namespace.put(this.leaseId).value(value).lease(this.leaseId))
+      .else(this.namespace.get(this.leaseId))
+      .commit()
 
     this._leaderKey = `${this.getPrefix()}/${this.leaseId}`
     this._leaderRevision = result.header.revision
@@ -70,9 +71,10 @@ export class Election {
       throw Election.notLeaderError
     }
 
-    const r = await this.namespace.if(this.leaseId, 'Create', '==', this._leaderRevision)
-                                  .then(this.namespace.put(this.leaseId).value(value).lease(this.leaseId))
-                                  .commit()
+    const r = await this.namespace
+      .if(this.leaseId, 'Create', '==', this._leaderRevision)
+      .then(this.namespace.put(this.leaseId).value(value).lease(this.leaseId))
+      .commit()
 
     if (!r.succeeded) {
       this._leaderKey = '';
@@ -87,9 +89,11 @@ export class Election {
       return
     }
 
-    await this.namespace.if(this.leaseId, 'Create', '==', this._leaderRevision)
-                                  .then(this.namespace.delete().key(this.leaseId))
-                                  .commit()
+    await this.namespace
+      .if(this.leaseId, 'Create', '==', this._leaderRevision)
+      .then(this.namespace.delete().key(this.leaseId))
+      .commit()
+
     this._leaderKey = ''
     this._leaderRevision = ''
     this._isLeader = false
@@ -98,7 +102,7 @@ export class Election {
   public async getLeader() {
     const result = await this.namespace.getAll().sort('Create', 'Ascend').keys()
     if (result.length === 0) {
-      return
+      throw Election.noLeaderError
     }
     return result[0]
   }
