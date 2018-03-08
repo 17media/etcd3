@@ -2,6 +2,21 @@ import BigNumber from 'bignumber.js'
 import { Lease } from './lease'
 import { Namespace } from './namespace'
 
+/**
+ * Implmentation of etcd election.
+ * @see https://github.com/coreos/etcd/blob/master/clientv3/concurrency/election.go
+ *
+ * @example
+ * const client = new Etcd3()
+ * const election = new Election(client, 'singleton_service')
+ * const id = BigNumber.random().toString()
+ *
+ * // waiting for election ready
+ * await election.ready()
+ *
+ * // process will hang here until elected
+ * await election.campaign(id)
+ */
 export class Election {
   public static readonly prefix = 'election'
   public static readonly ttl = 1
