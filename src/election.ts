@@ -66,16 +66,17 @@ export class Election {
         const kv = result.responses[0].response_range.kvs[0]
         this._leaderRevision = kv.create_revision
         await this.proclaim(value)
-      } catch (err) {
+      } catch (error) {
         await this.resign();
-        throw err
+        throw error
       }
     }
 
     try {
       await this.waitForElected()
-    } catch (err) {
+    } catch (error) {
       this._isLeader = false
+      throw error
     }
   }
 
@@ -136,13 +137,24 @@ export class Election {
       return
     }
 
-    await new Promise(async (resolve, reject) => {
+    const lastKey = result[0]
+    const watcher = await this.namespace.watch().key(lastKey).create()
+    const deleteOrError = new Promise(async (resolve, reject) => {
       // waiting for deleting of that key
-      const lastKey = result[0]
-      const watcher = await this.namespace.watch().key(lastKey).create()
       watcher.on('delete', resolve)
       watcher.on('error', reject)
     })
+
+    try {
+      await deleteOrError
+    } catch (error) {
+      throw error
+    } finally {
+      /**
+       * @see https://github.com/mixer/etcd3/issues/62
+       */
+      await watcher.cancel()
+    }
   }
 
   private throwIfNotReady(): void {
