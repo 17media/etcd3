@@ -60,7 +60,7 @@ export class Election {
       .else(this.namespace.get(this.leaseId))
       .commit()
 
-    this._leaderKey = `${this.getPrefix()}/${this.leaseId}`
+    this._leaderKey = `${this.getPrefix()}${this.leaseId}`
     this._leaderRevision = result.header.revision
     this._isLeader = true
 
@@ -123,7 +123,7 @@ export class Election {
     if (result.length === 0) {
       throw Election.noLeaderError
     }
-    return result[0]
+    return `${this.getPrefix()}${result[0]}`
   }
 
   public getPrefix() {
