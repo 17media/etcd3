@@ -5,12 +5,14 @@ import { Election,
          Etcd3 } from '../src'
 import { getOptions, tearDownTestClient } from './util'
 
+const sleep = (t: number) =>  new Promise(resolve => setTimeout(resolve, t))
+
 describe('election', () => {
-  let client: Etcd3;
-  let election: Election;
+  let client: Etcd3
+  let election: Election
 
   beforeEach(async () => {
-    client = new Etcd3(getOptions());
+    client = new Etcd3(getOptions())
     election = new Election(client, 'test-election')
     await election.ready()
     await election.campaign('candidate')
@@ -39,11 +41,24 @@ describe('election', () => {
         expect(election2.isLeader).to.be.true
       })
 
+      await sleep(10)
+
       await election.resign()
 
       await waitElection2
 
       await tearDownTestClient(client2)
+    })
+
+    it('should proclaim if campaign repeatly', async () => {
+      expect(election.isLeader).to.be.true
+
+      const oldValue = await client.get(election.leaderKey)
+      expect(oldValue).to.equal('candidate')
+
+      await election.campaign('new-value')
+      const newValue = await client.get(election.leaderKey)
+      expect(newValue).to.equal('new-value')
     })
 
   })

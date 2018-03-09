@@ -153,9 +153,6 @@ export class Election {
     } catch (error) {
       throw error
     } finally {
-      /**
-       * @see https://github.com/mixer/etcd3/issues/62
-       */
       await watcher.cancel()
     }
   }
