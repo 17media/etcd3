@@ -190,6 +190,15 @@ export class EtcdWatchStreamEnded extends Error {
     super('The etcd watch stream was unexpectedly ended');
   }
 }
+/*
+ * Etcd leader election has no leader
+ */
+export class EtcdNoLeaderError extends Error {}
+
+/**
+ * Process in this etcd leader election is not a leader.
+ */
+export class EtcdNotLeaderError extends Error {}
 
 /**
  * An STMConflictError is thrown from the `SoftwareTransaction.transact`
