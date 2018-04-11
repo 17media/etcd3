@@ -40,6 +40,7 @@ export class Election extends EventEmitter {
     super();
     this.namespace = parent.namespace(this.getPrefix());
     this.lease = this.namespace.lease(ttl);
+    this.lease.on('lost', error => this.emit('error', error));
   }
 
   public on(event: 'leader', listener: (leaderKey: string) => void): this;
