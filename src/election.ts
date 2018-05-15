@@ -20,7 +20,7 @@ export class Election extends EventEmitter {
   public static readonly prefix = 'election';
 
   private readonly namespace: Namespace;
-  private lease: Lease;
+  private lease: Lease|null = null;
 
   private leaseId = '';
   private _leaderKey = '';
@@ -39,12 +39,15 @@ export class Election extends EventEmitter {
               public readonly ttl: number = 60) {
     super();
     this.namespace = parent.namespace(this.getPrefix());
-    this.lease = this.namespace.lease(ttl);
-    this.lease.on('lost', () => this.onLeaseLost());
     this.on('newListener', (event: string) => this.onNewListener(event));
   }
 
   public on(event: 'leader', listener: (leaderKey: string) => void): this;
+  /**
+   * errors are fired when:
+   * - observe error
+   * - lease lost
+   */
   public on(event: 'error', listener: (error: any) => void): this;
   public on(event: string|symbol, listener: Function): this;
   public on(event: string, handler: Function): this {
@@ -52,12 +55,16 @@ export class Election extends EventEmitter {
     return super.on(event, handler);
   }
 
-  public async ready() {
-    this.leaseId = await this.lease.grant();
+  public async initialize() {
+    if (!this.lease) {
+      this.lease = this.namespace.lease(this.ttl);
+      this.lease.on('lost', () => this.onLeaseLost());
+      this.leaseId = await this.lease.grant();
+    }
   }
 
   public async campaign(value: string) {
-    await this.ready();
+    await this.initialize();
 
     const result = await this.namespace
       .if(this.leaseId, 'Create', '==', 0)
@@ -78,7 +85,7 @@ export class Election extends EventEmitter {
         }
       } catch (error) {
         await this.resign();
-        return this.emitOrThrowError(error);
+        throw error;
       }
     }
 
@@ -86,13 +93,13 @@ export class Election extends EventEmitter {
       await this.waitForElected();
     } catch (error) {
       await this.resign();
-      return this.emitOrThrowError(error);
+      throw error;
     }
   }
 
   public async proclaim(value: any) {
     if (!this._isCampaigning) {
-      return this.emitOrThrowError(new EtcdNotLeaderError());
+      throw new EtcdNotLeaderError();
     }
 
     const r = await this.namespace
@@ -102,12 +109,16 @@ export class Election extends EventEmitter {
 
     if (!r.succeeded) {
       this._leaderKey = '';
-      return this.emitOrThrowError(new EtcdNotLeaderError());
+      throw new EtcdNotLeaderError();
     }
   }
 
   public async resign() {
     if (!this.isCampaigning) {
+      return;
+    }
+
+    if (!this.lease) {
       return;
     }
 
@@ -202,25 +213,23 @@ export class Election extends EventEmitter {
   }
 
   private tryObserve(): void {
-    this.observe().catch(error => this.emitOrThrowError(error));
+    this.observe().catch(error => {
+      this.emit('error', error);
+      this.tryObserve();
+    });
   }
 
   private shouldObserve(event: string|symbol): boolean {
     return event === 'leader';
   }
 
-  private emitOrThrowError(error: any): void {
-    if (this.listenerCount('error') > 0) {
-      this.emit('error', error);
-    } else {
-      throw error;
-    }
-  }
-
   private onLeaseLost() {
-    this.lease = this.namespace.lease(this.ttl);
-    this.lease.on('lost', () => this.onLeaseLost());
-    this.leaseId = '';
+    if (this.lease) {
+      this.lease.removeAllListeners();
+      this.lease = null;
+      this.leaseId = '';
+    }
+    this.initialize().catch(error => this.emit('error', error));
   }
 
   private onNewListener(event: string) {
