@@ -20,9 +20,9 @@ export class Election extends EventEmitter {
   public static readonly prefix = 'election';
 
   private readonly namespace: Namespace;
-  private lease: Lease|null = null;
+  private lease!: Lease;
 
-  private leaseId = '';
+  // private leaseId = '';
   private _leaderKey = '';
   private _leaderRevision = '';
   private _isCampaigning = false;
@@ -30,7 +30,7 @@ export class Election extends EventEmitter {
 
   public get leaderKey(): string { return this._leaderKey; }
   public get leaderRevision(): string { return this._leaderRevision; }
-  public get isReady(): boolean { return this.leaseId.length > 0; }
+  // public get isReady(): boolean { return this.leaseId.length > 0; }
   public get isCampaigning(): boolean { return this._isCampaigning; }
   public get isObserving(): boolean { return this._isObserving; }
 
@@ -55,24 +55,18 @@ export class Election extends EventEmitter {
     return super.on(event, handler);
   }
 
-  public async initialize() {
-    if (!this.lease) {
-      this.lease = this.namespace.lease(this.ttl);
-      this.lease.on('lost', () => this.onLeaseLost());
-      this.leaseId = await this.lease.grant();
-    }
-  }
-
   public async campaign(value: string) {
-    await this.initialize();
+    await this.grantLease();
+
+    const leaseId = await this.lease.grant();
 
     const result = await this.namespace
-      .if(this.leaseId, 'Create', '==', 0)
-      .then(this.namespace.put(this.leaseId).value(value).lease(this.leaseId))
-      .else(this.namespace.get(this.leaseId))
+      .if(leaseId, 'Create', '==', 0)
+      .then(this.namespace.put(leaseId).value(value).lease(leaseId))
+      .else(this.namespace.get(leaseId))
       .commit();
 
-    this._leaderKey = `${this.getPrefix()}${this.leaseId}`;
+    this._leaderKey = `${this.getPrefix()}${leaseId}`;
     this._leaderRevision = result.header.revision;
     this._isCampaigning = true;
 
@@ -102,9 +96,11 @@ export class Election extends EventEmitter {
       throw new EtcdNotLeaderError();
     }
 
+    const leaseId = await this.lease.grant();
+
     const r = await this.namespace
-      .if(this.leaseId, 'Create', '==', this._leaderRevision)
-      .then(this.namespace.put(this.leaseId).value(value).lease(this.leaseId))
+      .if(leaseId, 'Create', '==', this._leaderRevision)
+      .then(this.namespace.put(leaseId).value(value).lease(leaseId))
       .commit();
 
     if (!r.succeeded) {
@@ -118,21 +114,17 @@ export class Election extends EventEmitter {
       return;
     }
 
-    if (!this.lease) {
-      return;
-    }
+    const leaseId = await this.lease.grant();
 
     const r = await this.namespace
-      .if(this.leaseId, 'Create', '==', this._leaderRevision)
-      .then(this.namespace.delete().key(this.leaseId))
+      .if(leaseId, 'Create', '==', this._leaderRevision)
+      .then(this.namespace.delete().key(leaseId))
       .commit();
 
     if (!r.succeeded) {
       // If fail, revoke lease for performing resigning
-      await this.lease.revoke();
-      this.lease = this.namespace.lease(this.ttl);
-      this.lease.on('lost', () => this.onLeaseLost());
-      this.leaseId = '';
+      await this.revokeLease();
+      await this.grantLease();
     }
 
     this._leaderKey = '';
@@ -224,17 +216,27 @@ export class Election extends EventEmitter {
   }
 
   private onLeaseLost() {
-    if (this.lease) {
-      this.lease.removeAllListeners();
-      this.lease = null;
-      this.leaseId = '';
-    }
-    this.initialize().catch(error => this.emit('error', error));
+    this.revokeLease().then(() => this.grantLease()).catch(error => this.emit('error', error));
   }
 
   private onNewListener(event: string) {
     if (this.shouldObserve(event)) {
       this.tryObserve();
+    }
+  }
+
+  private async grantLease() {
+    if (!this.lease) {
+      this.lease = this.namespace.lease(this.ttl);
+      this.lease.on('lost', () => this.onLeaseLost());
+      // this.leaseId = await this.lease.grant();
+    }
+  }
+
+  private async revokeLease() {
+    if (!this.lease.revoked) {
+      await this.lease.revoke();
+      this.lease.removeAllListeners();
     }
   }
 }
